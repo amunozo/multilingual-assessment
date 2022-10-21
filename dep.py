@@ -232,7 +232,7 @@ def train(treebank, encoding, lm, task, device=0):
 
 def evaluate(treebank, encoding, lm, task, in_training_data, device=0):
         """
-        Evaluate a dependency parsing using the CoNLL evaluation script
+        Evaluate a dependency parsing probe using the CoNLL evaluation script
         input: treebank:Treebank name
                encoding: sequence labeling encoding name
                lm: huggingface language model name

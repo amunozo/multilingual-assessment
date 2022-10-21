@@ -1,5 +1,6 @@
 import tempfile
 import os
+import sys
 
 from dep import model_config
 
@@ -19,8 +20,13 @@ def encode(language, task, output_dir):
         test = dataset + 'gold/ptb/test/test.{}.gold.ptb'.format(language.capitalize())
 
         t2l_output = output_dir
-        encoding_script = 'python tree2labels/dataset.py --train "{}" --dev "{}" --test "{}" --output "{}" --treebank "{}"\
-                --os --root_label'.format(train, dev, test, t2l_output, language)
+        if task == "single":
+                encoding_script = 'python tree2labels/dataset.py --train "{}" --dev "{}" --test "{}" --output "{}" --treebank "{}" \
+                --encode_unaries --os --abs_top 3 --abs_neg_gap 2'.format(train, dev, test, t2l_output, language)
+        
+        elif task == "multi":
+                encoding_script = 'python tree2labels/dataset.py --train "{}" --dev "{}" --test "{}" --output "{}" --treebank "{}" \
+                        --encode_unaries --os --abs_top 3 --abs_neg_gap 2 --split_tags'.format(train, dev, test, t2l_output, language)
         
         os.system(encoding_script)
 
@@ -69,7 +75,7 @@ def dataset_config(language, task, output_dir):
                         encode(language, task, output_dir)[1]
                         )
         elif task == 'multi':
-        # TODO: Idk how tags are split up in the multi-task case
+        # TODO: There is no need of multi task setup afaik
                 pass
 
         with open(config_file, 'w') as f:
@@ -103,6 +109,11 @@ def train(language, lm, task, device=0):
               task: single task or multi task
               device: device to use
     """
+    if language == 'english':
+        dataset = 'ptb'
+    else:
+        dataset = 'SPMRL'
+        
     model_dir = 'data/const/' + task + '/' + lm
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)
@@ -111,13 +122,52 @@ def train(language, lm, task, device=0):
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)
     
-    name = name = '{}_{}_{}_{}'.format('const', lm, 'language', task)
-    dataset_config_file = dataset_config(language, task, model_dir)
+    name = name = '{}/{}/{}/{}/'.format('const', lm, language, task)
+    dataset_config_file = dataset_config(language, task, dataset, model_dir)
     parameters_config_file = model_config(lm, model_dir)
     train_str = 'python3 "machamp/train.py" --dataset_config "{}" --parameters_config "{}" --device "{}" --name "{}" '
     train_str = train_str.format(dataset_config_file, parameters_config_file, device, name)
     os.system(train_str)
 
+def evaluate(language, lm, task, dataset='SPMRL', device=0):
+        """
+        Evaluate a constituency parsing probe using sequence labeling tags
+        input: language: language name
+                lm: language model
+                device: device to use
+        """
+        name = '{}/{}/{}/{}/'.format('const', lm, language, task)
+        model_dir = '/media/alberto/Seagate Portable Drive/ml_probing/logs/' + name
+        model = os.path.join(model_dir + 'model.tar.gz')
+        data_dir = 'data/const/' + task + '/' + lm + '/' + language
+
+        # Get test label file
+        test_file = data_dir + '/{}-test.seq_lu'.format(language)
+        output_seq = model_dir + 'SPLMR.test.out'
+
+        # Predict test file
+        predict_str = 'python3 "machamp/predict.py" "{}" "{}" "{}" --dataset SPLMR --device "{}"'
+        predict_str = predict_str.format(model, test_file, output_seq, device)
+        os.system(predict_str)
+
+        # Get gold test tree file
+        treebank = spmrl + language.upper() + '_SPMRL/'
+        gold_test_tree = treebank + 'gold/ptb/test/test.{}.gold.ptb'.format(language.capitalize())
+        # Convert labels to trees
+        #output_tree = model_dir + '/SPLMR.out.tree'
+        # Evaluate
+        evaluate_str = 'python3 "tree2labels/evaluate.py" --input "{}" --gold "{}" --evalb "{}"'
+        if dataset == 'SPMRL':
+                evaluate_str = evaluate_str.format(
+                        output_seq,
+                        gold_test_tree,
+                        'tree2labels/EVAL_SPRML/evalb_spmrl2013.final/evalb_spmrl'
+                        )
+        elif dataset == 'Penn':
+                pass #TODO: adjust to Penn Treebank
+
+        os.system(evaluate_str)
+        
 
 if __name__ == '__main__':
-    train('french', 'bert-base-multilingual-cased', 'single', device=0)
+        evaluate('french', 'bert-base-multilingual-cased', 'single', 'SPMRL', 0)
