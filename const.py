@@ -1,8 +1,11 @@
 import tempfile
 import os
 import sys
-
-from dep import model_config
+import subword_models
+import util
+import canine
+import torch
+import shutil
 
 spmrl = os.path.expanduser('~/ml_probing/spmrl_2014/')
 
@@ -14,94 +17,50 @@ def encode(language, task, output_dir):
                 outputs: JSON dict of samples
         """
         # find sets within the dataset
-        dataset = spmrl + language.upper() + '_SPMRL/'
-        train = dataset + 'gold/ptb/train/train.{}.gold.ptb'.format(language.capitalize())
-        dev = dataset + 'gold/ptb/dev/dev.{}.gold.ptb'.format(language.capitalize())
-        test = dataset + 'gold/ptb/test/test.{}.gold.ptb'.format(language.capitalize())
+        if language == 'english':
+                dataset = 'PTB/'
+                train = dataset + 'train.trees'
+                dev = dataset + 'dev.trees'
+                test = dataset + 'test.trees'
+
+        elif language == 'chinese':
+                dataset = 'CTB/'
+                train = dataset + 'train_ch.trees'
+                dev = dataset + 'dev_ch.trees'
+                test = dataset + 'test_ch.trees'
+        else:
+                dataset = spmrl + language.upper() + '_SPMRL/'
+                train = dataset + 'gold/ptb/train/train.{}.gold.ptb'.format(language.capitalize())
+                dev = dataset + 'gold/ptb/dev/dev.{}.gold.ptb'.format(language.capitalize())
+                test = dataset + 'gold/ptb/test/test.{}.gold.ptb'.format(language.capitalize())
+
+        
+        
 
         t2l_output = output_dir
-        if task == "single":
-                encoding_script = 'python tree2labels/dataset.py --train "{}" --dev "{}" --test "{}" --output "{}" --treebank "{}" \
-                --encode_unaries --os --abs_top 3 --abs_neg_gap 2'.format(train, dev, test, t2l_output, language)
-        
-        elif task == "multi":
-                encoding_script = 'python tree2labels/dataset.py --train "{}" --dev "{}" --test "{}" --output "{}" --treebank "{}" \
-                        --encode_unaries --os --abs_top 3 --abs_neg_gap 2 --split_tags'.format(train, dev, test, t2l_output, language)
-        
-        os.system(encoding_script)
 
-        # Transform the sequence labeling file into a format readable by MaChAmp if needed
         train_output = t2l_output + '/{}-train.seq_lu'.format(language)
         dev_output = t2l_output + '/{}-dev.seq_lu'.format(language)
-        test_output = t2l_output + '/{}-test.seq_lu'.format(language)
+        test_output = t2l_output + '/{}-test.seq_lu'.format(language)       
 
+        encoding_script = 'python tree2labels/dataset.py --train "{}" --dev "{}" --test "{}" --treebank "{}" --output "{}" --os --encode_unaries'.format(train, dev, test, language, t2l_output)
+  
+        os.system(encoding_script)
+        
         encoded_files = [train_output, dev_output, test_output]
         return encoded_files
     
-def decode(file): # TODO
+def decode(file, trees, labels): # TODO
         """
         Encode  labels into dependency trees 
         inputs: file: sequence labeling encoding
                 encoding: conllu file
         outputs: conllu file
         """
+        decoding_script = 'python CoDeLin/main.py CONST DEC REL {} {} --time --sep _ --ujoiner + --conflict C_STRAT_MAX'.format(trees, labels)
 
-def dataset_config(language, task, output_dir):
-        """
-        Create a dataset config file for the dataset
-        inputs: treebank: Treebank name
-                encoding: sequence labeling encoding
-        outputs: dataset config file
-        """
-        config_file = output_dir + '/dataset_config.json'
-        treebank = language.upper() + '_SPMRL/'
-
-        if task == 'single':
-                config_json = '''{{
-                "SPLMR": {{
-                        "train_data_path": "{}",
-                        "validation_data_path": "{}",
-                        "word_idx": 0,
-                        "tasks": 
-                        {{
-                        "deptag":  {{
-                                "task_type": "seq",
-                                "column_idx": 2
-                                }}
-                        }}
-                }}
-                }}'''.format(
-                        encode(language, task, output_dir)[0],
-                        encode(language, task, output_dir)[1]
-                        )
-        elif task == 'multi':
-        # TODO: There is no need of multi task setup afaik
-                pass
-
-        with open(config_file, 'w') as f:
-                f.write(config_json)
-
-        return config_file
-
-def model_config(lm, output_dir):
-        """
-        Create a model config file for the model
-        inputs: lm_model: language model name
-        outputs: model config file
-        """
-        dimension = '768'
-        lm = '"{}"'.format(lm)      
-        config_template = 'model_config.json'
-        config_file = output_dir + '/' + 'model_config.json'
-        with open(config_template, 'r') as f:
-                config = f.read().replace('transformer_model', lm).replace('transformer_dim', dimension).replace('max_len,', '128,')
-
-        with open(config_file, 'w') as f:
-                f.write(config)
-
-        return config_file
-
-def train(language, lm, task, device=0):
+def train(language, lm, finetuned, pretrained, 
+        encoding='const', task='single', not_ft_lr=2e-3, ft_lr = 5e-5, epochs=10,):
     """
     Train a constituency parsing probe using sequence labeling tags
     input: language: language name
@@ -109,65 +68,174 @@ def train(language, lm, task, device=0):
               task: single task or multi task
               device: device to use
     """
-    if language == 'english':
-        dataset = 'ptb'
-    else:
-        dataset = 'SPMRL'
-        
-    model_dir = 'data/const/' + task + '/' + lm
-    if not os.path.exists(model_dir):
-        os.makedirs(model_dir)
-    
-    model_dir = os.path.join(model_dir, language)
-    if not os.path.exists(model_dir):
-        os.makedirs(model_dir)
-    
-    name = name = '{}/{}/{}/{}/'.format('const', lm, language, task)
-    dataset_config_file = dataset_config(language, task, dataset, model_dir)
-    parameters_config_file = model_config(lm, model_dir)
-    train_str = 'python3 "machamp/train.py" --dataset_config "{}" --parameters_config "{}" --device "{}" --name "{}" '
-    train_str = train_str.format(dataset_config_file, parameters_config_file, device, name)
-    os.system(train_str)
+    data_dir = 'data/' + encoding + '/' + finetuned + '/' \
+         + pretrained + '/' + language + '/' + task + '/'
 
-def evaluate(language, lm, task, dataset='SPMRL', device=0):
+
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
+
+    encode(language, task, data_dir)
+
+    # Create dataset
+    util.create_dataset(language, finetuned, pretrained, encoding)
+
+    if lm == 'bert-base-multilingual-cased' or lm == 'xlm-roberta-base':
+        subword_models.train(
+                treebank=language,
+                lm=lm,
+                finetuned=finetuned,
+                pretrained=pretrained,
+                encoding=encoding,
+                not_ft_lr=not_ft_lr,
+                ft_lr=ft_lr,
+                epochs=epochs,
+        )
+    
+    elif lm == 'google/canine-c' or lm == 'google/canine-s':
+        canine.train(
+                treebank=language,
+                lm=lm,
+                finetuned=finetuned,
+                pretrained=pretrained,
+                encoding=encoding,
+                not_ft_lr=not_ft_lr,
+                ft_lr=ft_lr,
+                epochs=epochs,
+        )
+
+def predict(treebank, lm, finetuned, pretrained, encoding='const', task='single'):
+        """
+        Predict output test file
+        """
+        if lm in ('xlm-roberta-base', 'bert-base-multilingual-cased'):
+                subword_models.predict(
+                        treebank=treebank,
+                        lm=lm,
+                        finetuned=finetuned,
+                        pretrained=pretrained,
+                        encoding=encoding,
+                        task=task,
+                )
+        elif lm in ('google/canine-c', 'google/canine-s'):
+                canine.predict(
+                        treebank=treebank,
+                        lm=lm,
+                        finetuned=finetuned,
+                        pretrained=pretrained,
+                        encoding=encoding,
+                        task=task,
+                )
+
+def evaluate(language, lm, finetuned, pretrained, encoding='const', task='single', device=0):
         """
         Evaluate a constituency parsing probe using sequence labeling tags
         input: language: language name
                 lm: language model
                 device: device to use
         """
-        name = '{}/{}/{}/{}/'.format('const', lm, language, task)
-        model_dir = '/media/alberto/Seagate Portable Drive/ml_probing/logs/' + name
-        model = os.path.join(model_dir + 'model.tar.gz')
-        data_dir = 'data/const/' + task + '/' + lm + '/' + language
-
-        # Get test label file
-        test_file = data_dir + '/{}-test.seq_lu'.format(language)
-        output_seq = model_dir + 'SPLMR.test.out'
-
-        # Predict test file
-        predict_str = 'python3 "machamp/predict.py" "{}" "{}" "{}" --dataset SPLMR --device "{}"'
-        predict_str = predict_str.format(model, test_file, output_seq, device)
-        os.system(predict_str)
-
-        # Get gold test tree file
-        treebank = spmrl + language.upper() + '_SPMRL/'
-        gold_test_tree = treebank + 'gold/ptb/test/test.{}.gold.ptb'.format(language.capitalize())
-        # Convert labels to trees
-        #output_tree = model_dir + '/SPLMR.out.tree'
-        # Evaluate
+        model_dir = util.ehd_dir + 'models/' + encoding + '/' + finetuned + '/' \
+         + pretrained + '/' + lm + '/' + language + '/' + task + '/'
+        output_dir = model_dir + 'output/'
+        output_test = output_dir + 'test.seq'
         evaluate_str = 'python3 "tree2labels/evaluate.py" --input "{}" --gold "{}" --evalb "{}"'
-        if dataset == 'SPMRL':
+                
+        # Get gold test tree file
+
+        if language == 'english' or language == 'chinese':
+                # Get test label file
+                if language == 'english':
+                        treebank = 'PTB/'
+                        gold_test_tree = treebank + 'test.trees'
+                elif language == 'chinese':
+                        treebank = 'CTB/'
+                        gold_test_tree = treebank + 'test_ch.trees'
+                # Evaluate
                 evaluate_str = evaluate_str.format(
-                        output_seq,
+                        output_test,
+                        gold_test_tree,
+                        'tree2labels/EVALB/evalb'
+                        )
+        else:
+                # Get test label file
+                treebank = spmrl + language.upper() + '_SPMRL/'
+                gold_test_tree = treebank + 'gold/ptb/test/test.{}.gold.ptb'.format(language.capitalize())
+                # Evaluate        
+                evaluate_str = evaluate_str.format(
+                        output_test,
                         gold_test_tree,
                         'tree2labels/EVAL_SPRML/evalb_spmrl2013.final/evalb_spmrl'
                         )
-        elif dataset == 'Penn':
-                pass #TODO: adjust to Penn Treebank
-
-        os.system(evaluate_str)
         
+        
+        output = os.popen(evaluate_str).readlines()
+        results = output[-26:-16]
+        results_dic = {}
+        for line in results:
+                line = line.replace(' ', '').replace('\n', '').split('=')
+                results_dic[line[0]] = line[1]
+        
+        if not os.path.exists('const_scores.csv'):
+                with open('const_scores.csv', 'w') as f:
+                        f.write('language,lm,finetuned,pretrained,encoding,task,')
+                        for key in results_dic.keys():
+                                f.write(key + ',')
+                        f.write('\n')
+
+        with open('const_scores.csv', 'a') as f:
+                f.write(language + ',' + lm + ',' + finetuned + ',' + pretrained + ',' + encoding + ',' + task + ',')
+                for key in results_dic.keys():
+                        f.write(results_dic[key] + ',')
+                f.write('\n')
+
+def evaluate_spans(
+        treebanks,
+        encoding,
+        finetuned,
+        pretrained, 
+        lms = ['bert-base-multilingual-cased', 'xlm-roberta-base', 'google/canine-c', 'google/canine-s'],
+        ):
+        """
+        Evaluate and plot the dependency displacements of a treebank
+        """
+        # Locate gold conllu file
+        ud = '/home/alberto/Universal Dependencies 2.9/ud-treebanks-v2.9/'
+        treebank_dir = ud + treebank + '/'
+        for file in os.listdir(treebank_dir):
+                if file.endswith('ud-test.conllu'):
+                        gold_conllu = treebank_dir + file
+
+        # Locate test.conllu files
+        test_conllus = []
+        for lm in lms:
+                model_dir = util.ehd_dir + 'models/' + encoding + '/' + finetuned + '/' \
+                 + pretrained + '/' + lm + '/' + treebank + '/single/'
+                output_dir = model_dir + 'output/'
+                output_conllu = output_dir + 'test.conllu'
+                test_conllus.append(output_conllu)
+        
+        # Create a temporary directory to store the test.conllu files
+        temp_dir = 'temp/'
+        if not os.path.exists(temp_dir):
+                os.makedirs(temp_dir)
+        for test_conllu, lm in zip(test_conllus, lms):
+                if lm.startswith('google'):
+                        lm = lm.split('/')[-1]
+                shutil.copy(test_conllu, temp_dir + lm)
+        
+        # Define output directory
+        output_dir = 'plots/displacements/' +  encoding + '/' + finetuned + '/' + pretrained + '/' + treebank + '/'
+        if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+        output = output_dir + 'displacements.png'
+        # Evaluate displacements
+        disp_script = 'python evaluate_dependencies.py --gold "{}" --predicted "{}" --output "{}"'.format(gold_conllu, temp_dir, output)
+        os.system(disp_script)
+
+        # Remove temporary directory
+        shutil.rmtree(temp_dir)
 
 if __name__ == '__main__':
-        evaluate('french', 'bert-base-multilingual-cased', 'single', 'SPMRL', 0)
+        torch.cuda.empty_cache()
+        predict('swedish', 'bert-base-multilingual-cased', 'not_finetuned', 'pretrained')
+        evaluate('swedish', 'bert-base-multilingual-cased', 'not_finetuned', 'pretrained')
