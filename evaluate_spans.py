@@ -39,7 +39,7 @@ def performance_on_non_terminals(pred_trees, gold_trees):
     
     non_terminals = {}
     
-    for (pred_tree, gold_tree) in zip(pred_trees, gold_trees):
+    for (pred_tree, gold_tree) in zip(predicted_trees, gold_trees):
 
         predicted_tree = Tree.fromstring(pred_tree,remove_empty_top_bracketing=True)
         gold_tree = Tree.fromstring(gold_tree,remove_empty_top_bracketing=True)
@@ -49,8 +49,7 @@ def performance_on_non_terminals(pred_trees, gold_trees):
         predicted_spans = get_tree_spans(predicted_tree,True)        
         remaining_predicted_spans = copy.deepcopy(predicted_spans)
 
-        for gold_span in gold_spans: #A list of tuple (list of tokens, non-terminal)     
-            
+        for gold_span in gold_spans: #A list of tuple (list of tokens, non-terminal)   
             uppermost_non_terminal = gold_span[1].split("@")[0]              
             if uppermost_non_terminal not in non_terminals:
                 non_terminals[uppermost_non_terminal] = {"tp":0., "fn":0., "fp":0.}    
@@ -85,11 +84,11 @@ def performance_on_non_terminals(pred_trees, gold_trees):
     return scores
 
 
-def performance_on_span_len(pred_trees, gold_trees):
+def performance_on_span_len(predicted_trees, gold_trees):
      
     spans_by_len = {}
     
-    for (pred_tree, gold_tree) in zip(pred_trees, gold_trees):
+    for (pred_tree, gold_tree) in zip(predicted_trees, gold_trees):
 
         predicted_tree = Tree.fromstring(pred_tree,remove_empty_top_bracketing=True)
         gold_tree =Tree.fromstring(gold_tree,remove_empty_top_bracketing=True)
@@ -127,6 +126,7 @@ def performance_on_span_len(pred_trees, gold_trees):
         tp = spans_by_len[span_length]["tp"]
         fn = spans_by_len[span_length]["fn"]
         fp = spans_by_len[span_length]["fp"]
+        
         scores[span_length] = {"p": 0 if (tp + fp) == 0 else  tp / (tp + fp) ,
                                "r": 0 if (tp+fn) == 0 else tp / (tp+fn)}
     
@@ -191,7 +191,9 @@ if __name__ == '__main__':
     arg_parser.add_argument("--gold",
                             help="Path to the gold input file in parenthesized format")
     arg_parser.add_argument("--span_length_threshold", default=25)
-    arg_parser.add_argument("--output", default="", help="Path to the output file")
+    arg_parser.add_argument("--output",
+                            help="Path to the output .png file")
+
     args = arg_parser.parse_args()
     
     
@@ -226,30 +228,92 @@ if __name__ == '__main__':
 
     input_files = sorted([args.predicted+os.sep+f 
                    for f in os.listdir(args.predicted)])
+    
+    for input_file in input_files:
+        print ("Processing file", input_file)
+        with codecs.open(input_file) as f_input:
+            
+            predicted_trees = f_input.readlines()
+            model_name = input_file.rsplit("/",1)[1]
+            model_name = model_name.replace(".test.outputs.txt","")        
+            span_performance_by_len = performance_on_span_len(predicted_trees, gold_trees)
+            nt_performance = performance_on_non_terminals(predicted_trees, 
+                                                                 gold_trees)
+           # f = lambda x: 0 if x[1] == 0 else round(x[0] / x[1],4)
+            f1_score = lambda p,r : 0 if p== 0 and r == 0 else round(2*(p*r) / (p+r),4)
+            
+            for span_len in sorted(span_performance_by_len):
+                if span_len > args.span_length_threshold: continue
+                p = span_performance_by_len[span_len]["p"] 
+                r = span_performance_by_len[span_len]["r"]
+                f1 =  f1_score(p,r) 
+                span_lengths.append(span_len)
+                ps.append(p)
+                rs.append(r)
+                f1s.append(f1)
+                models.append(model2legends(model_name))
+                sizes.append(14)
 
+            for non_terminal, occ in nt_counter.most_common(7):
+                p = nt_performance[non_terminal]["p"]
+                r = nt_performance[non_terminal]["r"]
+                f1 =  f1_score(p,r)
+                nts.append(non_terminal+"("+str(round(nt_lengths[non_terminal],1))+")")
+                nts_occ.append(occ)
+                ps_nt.append(p)
+                rs_nt.append(r)
+                f1s_nt.append(f1)
+                models_nt.append(model2legends(model_name))
+
+    
+    d = {"span_length": span_lengths,
+         "precision": ps,
+         "recall": rs,
+         "f1-score": f1s,
+         "model": models}
+    
+    data = pd.DataFrame(d)
+        
+    d_nt = {"non_terminal": nts,
+            "non_terminal_occ": nts_occ,
+            "precision": ps_nt,
+            "recall": rs_nt,
+            "f1-score": f1s_nt,
+            "model": models_nt }
+
+    data_nt = pd.DataFrame(d_nt)
+
+    data_nt.sort_values(by=['model',"non_terminal_occ"],  inplace=True, ascending=[0,0])
 
 #########################################################################
 #                      PLOT F1-SCORE/SPAN_LENGTH                        #
 #########################################################################
-
+plt.figure()
 markers = ['o','.',',','*','v','D','h','X','d','^','o','o','<','>']
-sns.set(style="whitegrid")#, rc={"lines.linewidth": 5, 'lines.markersize': 14})
-palette = 'Set2' #dict(zip(sorted(set(models)), sns.color_palette()))
+sns.set(style="whitegrid")
+palette = 'Set2'
+
 ax = sns.lineplot(x="span_length", y="f1-score",
              hue="model", style="model",
              data=data,
              markers=True,
+             linewidth=2.5,
+             markersize=8,
              palette=palette,
              dashes=False)
 
+ax.xaxis.label.set_size(20)
+ax.yaxis.label.set_size(20)
+ax.tick_params(labelsize=20)
 handles, labels = ax.get_legend_handles_labels()
-#ax.legend(handles=handles[1:], labels=labels[1:],loc='upper center', ncol= int(len(set(models)) / 2),
-#          bbox_to_anchor=(0.5, 1.25))
-plt.setp(ax.get_legend().get_texts(), fontsize='35') 
-ax.tick_params()#labelsize=30)
-ax.set_xlabel("Span length")#,fontsize=35)
-ax.set_ylabel("F1-score")#,fontsize=35)
-plt.savefig(args.output)
+
+
+plt.setp(ax.get_legend().get_texts())
+ax.legend_.remove() 
+ax.set_xlabel("Span length")
+ax.set_ylabel("F1-score")
+ax.set_ylim(0,1)
+plt.savefig(args.output, bbox_inches='tight', dpi=300)
 
 #########################################################################
 #           PLOT F1-SCORE/NON-TERMINAL SYMBOL (avg length)              #
@@ -259,14 +323,17 @@ plt.savefig(args.output)
 #             hue="model",
 #             data=data_nt,
 #             palette=palette)
-
+#
 #handles, labels = ax.get_legend_handles_labels()
 #labels = ["("+str(idl)+") "+l for idl,l in enumerate(labels,1)] 
 #ax.legend(handles=handles, labels=labels,loc='upper center', ncol= int(len(set(models)) / 2),
 #          bbox_to_anchor=(0.5, 1.25))
-#plt.setp(ax.get_legend().get_texts(), fontsize='35') # for legend text
+#plt.setp(ax.get_legend().get_texts()) # for legend text
 #ax.tick_params(labelsize=30,rotation=15)
-#ax.set_xlabel("Span head non terminal (avg span length)",fontsize=35)
-#ax.set_ylabel("F1-score",fontsize=35)
-
-plt.show()
+#ax.set_xlabel("Span head non terminal (avg span length)")
+#ax.set_ylabel("F1-score")
+#
+#plt.savefig(args.output.replace('spans', 'non-terminal'), bbox_inches='tight', dpi=300)
+#
+#plt.show()
+#

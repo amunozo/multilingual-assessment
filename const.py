@@ -50,14 +50,15 @@ def encode(language, task, output_dir):
         encoded_files = [train_output, dev_output, test_output]
         return encoded_files
     
-def decode(file, trees, labels): # TODO
+def decode(file, trees, output): # TODO
         """
         Encode  labels into dependency trees 
         inputs: file: sequence labeling encoding
                 encoding: conllu file
         outputs: conllu file
         """
-        decoding_script = 'python CoDeLin/main.py CONST DEC REL {} {} --time --sep _ --ujoiner + --conflict C_STRAT_MAX'.format(trees, labels)
+        decoding_script = 'python tree2labels/decode.py --input "{}" --gold "{}" --output "{}"'.format(file, trees, output)
+        os.system(decoding_script)
 
 def train(language, lm, finetuned, pretrained, 
         encoding='const', task='single', not_ft_lr=2e-3, ft_lr = 5e-5, epochs=10,):
@@ -189,7 +190,7 @@ def evaluate(language, lm, finetuned, pretrained, encoding='const', task='single
                 f.write('\n')
 
 def evaluate_spans(
-        treebanks,
+        treebank,
         encoding,
         finetuned,
         pretrained, 
@@ -198,44 +199,72 @@ def evaluate_spans(
         """
         Evaluate and plot the dependency displacements of a treebank
         """
-        # Locate gold conllu file
-        ud = '/home/alberto/Universal Dependencies 2.9/ud-treebanks-v2.9/'
-        treebank_dir = ud + treebank + '/'
-        for file in os.listdir(treebank_dir):
-                if file.endswith('ud-test.conllu'):
-                        gold_conllu = treebank_dir + file
+        # Locate gold file
+        if language == 'english':
+                dataset = 'PTB/'
+                gold = os.path.abspath(dataset + 'test.trees')
+
+        elif language == 'chinese':
+                dataset = 'CTB/'
+                gold = os.path.abspath(dataset + 'test_ch.trees')
+        else:
+                dataset = spmrl + language.upper() + '_SPMRL/'
+                gold = os.path.abspath(
+                       dataset + 'gold/ptb/test/test.{}.gold.ptb'.format(language.capitalize())
+                )
+        
 
         # Locate test.conllu files
-        test_conllus = []
+        test_trees = []
         for lm in lms:
                 model_dir = util.ehd_dir + 'models/' + encoding + '/' + finetuned + '/' \
                  + pretrained + '/' + lm + '/' + treebank + '/single/'
                 output_dir = model_dir + 'output/'
-                output_conllu = output_dir + 'test.conllu'
-                test_conllus.append(output_conllu)
+                output_seq = output_dir + 'test.seq'
+                # convert to .trees
+                output_tree = output_dir + 'test.trees'
+                decode(output_seq, gold, output_tree)
+
+                test_trees.append(output_tree)
         
         # Create a temporary directory to store the test.conllu files
         temp_dir = 'temp/'
         if not os.path.exists(temp_dir):
                 os.makedirs(temp_dir)
-        for test_conllu, lm in zip(test_conllus, lms):
+
+
+        for test_conllu, lm in zip(test_trees, lms):
                 if lm.startswith('google'):
                         lm = lm.split('/')[-1]
                 shutil.copy(test_conllu, temp_dir + lm)
         
         # Define output directory
-        output_dir = 'plots/displacements/' +  encoding + '/' + finetuned + '/' + pretrained + '/' + treebank + '/'
+        output_dir = 'plots/spans/' +  encoding + '/' + finetuned + '/' + pretrained + '/' + treebank + '_'
         if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
-        output = output_dir + 'displacements.png'
+        output_dir_nt = output_dir.replace('spans', 'non_terminal')
+        if not os.path.exists(output_dir_nt):
+                os.makedirs(output_dir_nt)
+        output = output_dir + 'spans.png'
         # Evaluate displacements
-        disp_script = 'python evaluate_dependencies.py --gold "{}" --predicted "{}" --output "{}"'.format(gold_conllu, temp_dir, output)
+        disp_script = 'python evaluate_spans.py --gold "{}" --predicted "{}" --output "{}"'.format(gold, temp_dir, output)
         os.system(disp_script)
 
         # Remove temporary directory
         shutil.rmtree(temp_dir)
 
 if __name__ == '__main__':
-        torch.cuda.empty_cache()
-        predict('swedish', 'bert-base-multilingual-cased', 'not_finetuned', 'pretrained')
-        evaluate('swedish', 'bert-base-multilingual-cased', 'not_finetuned', 'pretrained')
+        languages = [
+                'korean',
+                'english',
+                #'chinese',
+                'basque', 
+                #'french',
+                #'german',
+                #'hebrew',
+                'hungarian',
+                #'polish',
+                #'swedish',
+        ]
+        for language in languages:
+                evaluate_spans(language, 'const', 'not_finetuned', 'pretrained')

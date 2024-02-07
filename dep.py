@@ -8,11 +8,12 @@ import json
 import util
 import canine
 import subword_models
+import subprocess
 import shutil
 
 from transformers import AutoModelForTokenClassification
 
-ud = '/home/alberto/Universal Dependencies 2.9/ud-treebanks-v2.9/'
+ud = '/home/alberto/Universal Dependencies 2.9/OLD_UD2.9/'
        
 def encode(treebank, task, encoding, output_dir):
         """
@@ -138,6 +139,7 @@ def evaluate(treebank, lm, finetuned, pretrained,
         """
         Evaluate a dependency parsing probe using sequence labeling tags
         """
+        
         model_dir = util.ehd_dir + 'models/' + encoding + '/' + finetuned + '/' \
          + pretrained + '/' + lm + '/' + treebank + '/' + task + '/'
 
@@ -201,15 +203,14 @@ def evaluate(treebank, lm, finetuned, pretrained,
 def evaluate_displacement(
         treebank,
         encoding,
-        finetuned,
-        pretrained, 
+        finetuned='not_finetuned',
+        pretrained='pretrained',
         lms = ['bert-base-multilingual-cased', 'xlm-roberta-base', 'google/canine-c', 'google/canine-s'],
         ):
         """
         Evaluate and plot the dependency displacements of a treebank
         """
         # Locate gold conllu file
-        ud = '/home/alberto/Universal Dependencies 2.9/ud-treebanks-v2.9/'
         treebank_dir = ud + treebank + '/'
         for file in os.listdir(treebank_dir):
                 if file.endswith('ud-test.conllu'):
@@ -232,71 +233,136 @@ def evaluate_displacement(
                 if lm.startswith('google'):
                         lm = lm.split('/')[-1]
                 shutil.copy(test_conllu, temp_dir + lm)
-        shutil.copy(gold_conllu, temp_dir + 'gold')
+        shutil.copy(gold_conllu, temp_dir + 'gold') # type: ignore
         # Define output directory
-        output_dir = 'plots/displacements/' +  encoding + '/' + finetuned + '/' + pretrained + '/' + treebank + '/'
+        output_dir = 'plots/displacements/' +  encoding + '/' + finetuned + '/' + pretrained + '/'
         if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
-        output = output_dir + 'displacements.png'
+        if not os.path.exists(output_dir.replace('displacements', 'relations')):
+                print('creating relations directory')
+                os.makedirs(output_dir.replace('displacements', 'relations'))
+        output = output_dir + f'{treebank}_displacements.png'
         # Evaluate displacements
-        disp_script = 'python evaluate_dependencies.py --gold "{}" --predicted "{}" --output "{}"'.format(gold_conllu, temp_dir, output)
+        disp_script = 'python evaluate_dependencies.py --gold "{}" --predicted "{}" --output "{}"'.format(gold_conllu, temp_dir, output) # type: ignore
         os.system(disp_script)
 
-        # Remove temporary directory
-        #shutil.rmtree(temp_dir)
 
 def evaluate_avg_displacement(
         treebanks,
         encoding,
-        finetuned,
-        pretrained, 
+        name,
+        finetuned='not_finetuned',
+        pretrained='pretrained',
         lms = ['bert-base-multilingual-cased', 'xlm-roberta-base', 'google/canine-c', 'google/canine-s'],
         ):
         """
         Evaluate and plot the dependency displacements of a treebank
         """
         # Locate gold conllu file
-        ud = '/home/alberto/Universal Dependencies 2.9/ud-treebanks-v2.9/'
-        treebank_dir = ud + treebank + '/'
-        for file in os.listdir(treebank_dir):
-                if file.endswith('ud-test.conllu'):
-                        gold_conllu = treebank_dir + file
 
-        # Locate test.conllu files
-        test_conllus = []
+        gold_conllus = []      
+        test_conllus = {}
+        for treebank in treebanks:
+            treebank_dir = ud + treebank + '/'
+            for file in os.listdir(treebank_dir):
+                if file.endswith('ud-test.conllu'):
+                    gold_conllus.append(treebank_dir + file)
+
+
+                # Locate test.conllu files
         for lm in lms:
+            if lm.startswith('google'):
+                    lm_name = lm.split('/')[-1]
+            else:
+                    lm_name = lm
+
+            test_conllus[lm_name] = []
+            for treebank in treebanks:
                 model_dir = util.ehd_dir + 'models/' + encoding + '/' + finetuned + '/' \
-                 + pretrained + '/' + lm + '/' + treebank + '/single/'
+                    + pretrained + '/' + lm + '/' + treebank + '/single/'
+
                 output_dir = model_dir + 'output/'
                 output_conllu = output_dir + 'test.conllu'
-                test_conllus.append(output_conllu)
-        
+
+                test_conllus[lm_name].append(output_conllu)
+
         # Create a temporary directory to store the test.conllu files
         temp_dir = 'temp/'
         if not os.path.exists(temp_dir):
                 os.makedirs(temp_dir)
-        for test_conllu, lm in zip(test_conllus, lms):
-                if lm.startswith('google'):
-                        lm = lm.split('/')[-1]
-                shutil.copy(test_conllu, temp_dir + lm)
-        
+
+        # Create a concatenated gold conllu file
+        with open(temp_dir + 'gold', 'w') as f:
+                for gold_conllu in gold_conllus:
+                        with open(gold_conllu, 'r') as g:
+                                f.write(g.read())
+        gold_conllu = temp_dir + 'gold'
+        # Create a concatenated pred conllu file for each lm
+        for lm in lms:
+            if lm.startswith('google'):
+                lm_name = lm.split('/')[-1]
+            else:
+                lm_name = lm
+
+            with open(temp_dir + lm_name, 'w') as f:
+                for test_conllu in test_conllus[lm_name]:
+                    with open(test_conllu, 'r') as g:
+                            f.write(g.read())
+            
         # Define output directory
-        output_dir = 'plots/displacements/' +  encoding + '/' + finetuned + '/' + pretrained + '/' + treebank + '/'
+        output_dir = 'plots/displacements/' + name + '_'+ encoding
         if not os.path.exists(output_dir):
-                os.makedirs(output_dir)
-        output = output_dir + 'displacements.png'
+            os.makedirs(output_dir)
+                
+        if not os.path.exists(output_dir.replace('displacements', 'relations')):
+            print('creating relations directory')
+            os.makedirs(output_dir.replace('displacements', 'relations'))
+        output = output_dir + f'_displacements.png'
         # Evaluate displacements
-        disp_script = 'python evaluate_dependencies.py --gold "{}" --predicted "{}" --output "{}"'.format(gold_conllu, temp_dir, output)
+        disp_script = 'python evaluate_dependencies.py --gold "{}" --predicted "{}" --output "{}"'.format(gold_conllu, temp_dir, output) # type: ignore
         os.system(disp_script)
 
         # Remove temporary directory
         shutil.rmtree(temp_dir)
+
+
 if __name__ == '__main__':
         treebanks = [
-    'UD_Ancient_Greek-Perseus', 'UD_Skolt_Sami-Giellagas', 'UD_Welsh-CCG',
-    'UD_Bulgarian-BTB', 'UD_Guajajara-TuDeT', 'UD_Armenian-ArmTDP',
-    'UD_Turkish-BOUN', 'UD_Ligurian-GLT', 'UD_Vietnamese-VTB',
-    'UD_Basque-BDT', 'UD_Bhojpuri-BHTB', 'UD_Kiche-IU', 'UD_Chinese-GSDSimp',
+                'UD_Ancient_Greek-Perseus', 'UD_Skolt_Sami-Giellagas', 'UD_Welsh-CCG',
+                'UD_Bulgarian-BTB', 'UD_Guajajara-TuDeT', 'UD_Armenian-ArmTDP',
+                'UD_Turkish-BOUN', 'UD_Ligurian-GLT', 'UD_Vietnamese-VTB',
+                'UD_Basque-BDT', 'UD_Bhojpuri-BHTB', 'UD_Kiche-IU', 'UD_Chinese-GSDSimp',
         ]
+
+        lr_treebanks = ['UD_Skolt_Sami-Giellagas', 'UD_Guajajara-TuDeT', 'UD_Ligurian-GLT','UD_Bhojpuri-BHTB',]
+        mr_treebanks = ['UD_Kiche-IU', 'UD_Welsh-CCG', 'UD_Armenian-ArmTDP', 'UD_Vietnamese-VTB']
+        rr_treebanks = ['UD_Chinese-GSDSimp', 'UD_Basque-BDT', 'UD_Turkish-BOUN', 'UD_Bulgarian-BTB', 'UD_Ancient_Greek-Perseus']
+
+        treebanks_dir = {
+            'lr': lr_treebanks,
+            'mr': mr_treebanks,
+            'rr': rr_treebanks,
+        }
+
+        treebanks = [
+            'UD_Ancient_Greek-Perseus', 'UD_Skolt_Sami-Giellagas', 'UD_Welsh-CCG',
+            'UD_Bulgarian-BTB', 'UD_Guajajara-TuDeT', 'UD_Armenian-ArmTDP',
+            'UD_Turkish-BOUN', 'UD_Ligurian-GLT', 'UD_Vietnamese-VTB',
+            'UD_Basque-BDT', 'UD_Bhojpuri-BHTB', 'UD_Kiche-IU', 'UD_Chinese-GSDSimp',
+            'UD_Classical_Chinese-Kyoto', 'UD_Naija-NSC', 'UD_Maltese-MUDT', 'UD_Gothic-PROIEL',
+            'UD_Wolof-WTB', 'UD_Old_East_Slavic-TOROT'
+           ]
+        
+        encodings = ['2-planar-brackets-greedy'] #, 'relative', 'arc-hybrid']
+        lms = ['bert-base-multilingual-cased', 'xlm-roberta-base', 'google/canine-c', 'google/canine-s']
+
         for treebank in treebanks:
-                evaluate_displacement(treebank, '2-planar-brackets-greedy', 'not_finetuned', 'pretrained')
+            for encoding in encodings:
+               evaluate_displacement(treebank, encoding, 'not_finetuned', 'pretrained', lms)
+
+
+        #for key in treebanks_dir:
+        #    for encoding in encodings:
+        #        evaluate_avg_displacement(treebanks_dir[key], encoding, key)
+
+       

@@ -8,7 +8,9 @@ import pandas as pd
 import matplotlib
 import copy
 import os
+import pickle
 from _curses import tparm
+import chardet
 
 
 
@@ -25,11 +27,13 @@ def dependency_displacements(tree, unlabeled=False):
     
     distances = []
     for word in tree[1:]:
-        distance = word.head - word.idx
-        if unlabeled:
-            distances.append(distance)
-        else:
-            distances.append(str(distance)+"_"+word.deprel)
+        if word.head != 0:
+            distance = word.idx - word.head
+            if unlabeled:
+                distances.append(distance)
+            else:
+                distances.append(str(distance)+"_"+word.deprel)
+    # include only those that appear more than 5 times
     return distances
     
 
@@ -85,7 +89,8 @@ def read_conllu(conllu_sentence):
 
 def elements_to_plot_from_conll(path_file, unlabeled):    
     
-    with open(path_file) as f:
+    with open(path_file, 'r') as f:
+        print("Reading file: {}".format(path_file.split("/")[-1]))
         sentences = f.read().split("\n\n")
         distances = []
         relations = []
@@ -101,8 +106,11 @@ def elements_to_plot_from_conll(path_file, unlabeled):
 def dependency_head_performance(gold_labels, pred_labels):
  
     relations = {}
- 
-    assert(len(gold_labels),len(pred_labels))
+    print("Length of gold_labels: {}".format(len(gold_labels)))
+    print("Length of pred_labels: {}".format(len(pred_labels)))
+    if len(gold_labels) != len(pred_labels):
+        raise ValueError("Length of gold_labels and pred_labels do not match")
+    assert len(gold_labels) == len(pred_labels)
     for gold_element, pred_element in zip(gold_labels, pred_labels):
      
         gold_head = int(gold_element.split("_")[0]) 
@@ -138,9 +146,13 @@ def displacement_labeled_performance(gold_distances, pred_distances):
     
     
     distances = {}
-    assert(len(gold_distances),len(pred_distances))
-    for gold_element, pred_element in zip(gold_distances, pred_distances):
+    if len(gold_distances) != len(pred_distances):
+        raise ValueError("Length of gold_distances and pred_distances do not match")
     
+    assert len(gold_distances) == len(pred_distances), "Lengths of gold_distances and pred_distances do not match"
+    for gold_element, pred_element in zip(gold_distances, pred_distances):
+        if gold_distances.count(gold_element) < 10:
+            continue
         gold_distance = int(gold_element.split("_")[0]) 
         pred_distance = int(pred_element.split("_")[0]) 
         
@@ -242,9 +254,10 @@ if __name__ == '__main__':
                 
                 idx_relation = rel2idx[relation]
                 relations.append(relation)
-                relations_precision.append(precision[idx_relation])
-                relations_recall.append(recall[idx_relation])
-                relations_f1.append(f1[idx_relation])
+                idx_relation = int(idx_relation)
+                relations_precision.append(precision[idx_relation]) # type: ignore
+                relations_recall.append(recall[idx_relation]) # type: ignore
+                relations_f1.append(f1[idx_relation]) # type: ignore
                 relations_models.append(model2legends(model_name))
 
         else:
@@ -295,7 +308,7 @@ if __name__ == '__main__':
                 support.append(None)
             
             
-        for idxe, (p,r,f,s) in enumerate(zip(precision,recall,f1,support)):
+        for idxe, (p,r,f,s) in enumerate(zip(precision,recall,f1,support)): # type: ignore
 
             if abs(int(ilabels[idxe])) <= 20:
                 distances.append(ilabels[idxe])
@@ -309,16 +322,22 @@ if __name__ == '__main__':
              "recall": distances_recall,
              "f1-score": distances_f1,
              "model": distances_models}
-        
-    data = pd.DataFrame(d)    
-        
+
     
+       
+    data = pd.DataFrame(d)
+    data = data[data['model'] != 'gold']
+
     ############################################################################
     #                 PLOTTING DEPENDENCY DISPLACEMENTS                        #
     ############################################################################
             
     markers = ['o','.',',','*','v','D','h','X','d','^','o','o','<','>']
-    sns.set(style="whitegrid")#, rc={"lines.linewidth": 5, 'lines.markersize': 14})
+    sns.set(style="whitegrid")
+    # enlarge all fonts and marks
+
+    sns.set_context("paper", font_scale=1.8, rc={"lines.linewidth": 2, 'lines.markersize': 5})
+    
     #palette = dict(zip(sorted(set(distances_models)), sns.color_palette()))
     palette = 'Set2'
     
@@ -326,50 +345,69 @@ if __name__ == '__main__':
                  hue="model", style="model",
                  data=data,
                  palette=palette,
+                 linewidth=2.5,
+                 markersize=8,
                  markers=True,
-                 dashes=False)
-    
+                 dashes=False,
+                 )
+
+
     handles, labels = ax.get_legend_handles_labels()
-    #ax.legend(handles=handles[1:], labels=labels[1:],loc='upper center', ncol= int(len(set(distances_models)) / 2),
-    #          bbox_to_anchor=(0.5, 1.25))
-    plt.setp(ax.get_legend().get_texts())#, fontsize='35') # legend text size
-    
+    # delete legend
+    #ax.legend_.remove()
+
     #ax.tick_params(labelsize=30)
     ax.set_xlabel("Dependency displacement")#,fontsize=35)
     ax.set_ylabel("F1-score")#,fontsize=35)
-    # Save figure as 'test.pdf'
+    # set y-axis limits 0-1
+    ax.set_ylim(0,1)
+    ax.tick_params(labelsize=20)
+    # larger x- and y- labels titles
+    ax.xaxis.label.set_size(20)
+    ax.yaxis.label.set_size(20)
+
     plt.savefig(args.output, bbox_inches='tight', dpi=300)
+    
+    # linear legend outside the plot
+   # plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
     
     #plt.show()
     
     ############################################################################
     #                PLOTTING F1-SCORE/DEPENDENCY-RELATIONS                    #
     ############################################################################
+    # new fig
+    plt.figure()
+    d_rel = {"relations": relations,
+             "relations_occ": relations_occ,
+             "precision": relations_precision,
+             "recall": relations_recall,
+             "f1-score": relations_f1,
+             "model": relations_models}
     
-    #d_rel = {"relations": relations,
-    #         "relations_occ": relations_occ,
-    #         "precision": relations_precision,
-    #         "recall": relations_recall,
-    #         "f1-score": relations_f1,
-    #         "model": relations_models}
+    data_rel = pd.DataFrame(d_rel)    
+    data_rel = data_rel[data_rel['model'] != 'gold']
     
-    #data_rel = pd.DataFrame(d_rel)    
-    
-    #data_rel.sort_values(by=['model','relations_occ'],  inplace=True, ascending=[0,0])
-    
-    #ax = sns.barplot(x="relations", y="f1-score",
-    #             hue="model", 
-    #             data=data_rel,
-    #             palette=palette)
+    data_rel.sort_values(by=['model','relations_occ'],  inplace=True, ascending=[False,False]) # it was [0,0] before but Copilot suggested [False,False]
 
-    #handles, labels = ax.get_legend_handles_labels()
-    #labels = ["("+str(idl)+") "+l for idl,l in enumerate(labels,1)] 
-    #ax.legend(handles=handles, labels=labels,loc='upper center', ncol= int(len(set(distances_models)) / 2),
-    #          bbox_to_anchor=(0.5, 1.25))
-    #plt.setp(ax.get_legend().get_texts(), fontsize='35') # for legend text
+    ax.set_ylim(0,1)
+    # plot order: punct, nmod, advmod, nsubj, root, obj, case
+    order = ['punct','nmod','advmod','nsubj','root','obj','case']
+
+    ax = sns.barplot(x="relations", y="f1-score",
+                 hue="model", 
+                 data=data_rel,
+                 palette=palette,
+                 order=order,)
+
+    handles, labels = ax.get_legend_handles_labels()
+    labels = ["("+str(idl)+") "+l for idl,l in enumerate(labels,1)] 
+
+    plt.setp(ax.get_legend().get_texts()) # for legend text
     
-    #ax.tick_params(labelsize=30,rotation=15)
-    #ax.set_xlabel("Dependency relation",fontsize=34)
-    #ax.set_ylabel("F1-score",fontsize=35)    
-    
+    ax.set_xlabel("Dependency relation")
+    ax.set_ylabel("F1-score")
+    ax.set_ylim(0,1)
+    plt.savefig(args.output.replace('displacement', 'relation'), bbox_inches='tight', dpi=300)
+
     #plt.show()
