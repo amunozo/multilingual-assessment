@@ -4,3 +4,12 @@ This is the code used for the paper [Assessment of Pre-Trained Models Across Lan
 ### Contact
 
 If you have any questions or encounter issues, please feel free to contact the main author at [alberto.munoz.ortiz@udc.es](mailto:alberto.munoz.ortiz@udc.es).
+
+### Acknowledgments
+
+We gratefully acknowledge the support of the following organizations for their contributions to this research:
+
+- **European Research Council (ERC)**: Funding under the Horizon Europe research and innovation programme (SALSA, grant agreement No 101100615).
+- **ERDF/MICINN-AEI**: Grant SCANNER-UDC (PID2020-113230RB-C21).
+- **Xunta de Galicia**: Grant ED431C 2020/11 and the Centro de Investigación de Galicia “CITIC”, through the collaboration agreement between the Consellería de Cultura, Educación, Formación Profesional e Universidades and the Galician universities for the reinforcement of the research centres of the Galician University System (CIGUS).
+- **MCIN/AEI/10.13039/501100011033**: Funding for the FPI 2021 grant (PID2020-113230RB-C21).
