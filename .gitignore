@@ -154,11 +154,11 @@ cython_debug/
 .vscode/
 
 # Local logs and data
-*.txt
-*.csv
-*.json
+*.log
+!data/*.csv
+!results/*.txt
 !model_config.json
 !random_config.json
 !requirements.txt
-data/
-results/
+# data/
+# results/
