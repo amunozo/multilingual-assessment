@@ -1,7 +1,19 @@
+import os
+import sys
+
+# Add the project root to the python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from argparse import ArgumentParser
 from sklearn.metrics import precision_recall_fscore_support
 from collections import Counter, OrderedDict
 from collections import Counter
+import os
+import sys
+
+# Add the project root to the python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd

@@ -1,3 +1,9 @@
+import os
+import sys
+
+# Add the project root to the python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from transformers import AutoModelForMaskedLM, AutoConfig, AutoTokenizer, Trainer, \
     DataCollatorForLanguageModeling, TrainingArguments
 from datasets import load_dataset, Dataset
