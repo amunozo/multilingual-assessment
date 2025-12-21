@@ -43,7 +43,7 @@ def encode(language, task, output_dir):
         dev_output = t2l_output + '/{}-dev.seq_lu'.format(language)
         test_output = t2l_output + '/{}-test.seq_lu'.format(language)       
 
-        encoding_script = 'python tree2labels/dataset.py --train "{}" --dev "{}" --test "{}" --treebank "{}" --output "{}" --os --encode_unaries'.format(train, dev, test, language, t2l_output)
+        encoding_script = 'python external/tree2labels/dataset.py --train "{}" --dev "{}" --test "{}" --treebank "{}" --output "{}" --os --encode_unaries'.format(train, dev, test, language, t2l_output)
   
         os.system(encoding_script)
         
@@ -57,7 +57,7 @@ def decode(file, trees, output): # TODO
                 encoding: conllu file
         outputs: conllu file
         """
-        decoding_script = 'python tree2labels/decode.py --input "{}" --gold "{}" --output "{}"'.format(file, trees, output)
+        decoding_script = 'python external/tree2labels/decode.py --input "{}" --gold "{}" --output "{}"'.format(file, trees, output)
         os.system(decoding_script)
 
 def train(language, lm, finetuned, pretrained, 
@@ -69,8 +69,7 @@ def train(language, lm, finetuned, pretrained,
               task: single task or multi task
               device: device to use
     """
-    data_dir = 'data/' + encoding + '/' + finetuned + '/' \
-         + pretrained + '/' + language + '/' + task + '/'
+    data_dir = os.path.join('data', encoding, finetuned, pretrained, language, task)
 
 
     if not os.path.exists(data_dir):
@@ -139,7 +138,7 @@ def evaluate(language, lm, finetuned, pretrained, encoding='const', task='single
          + pretrained + '/' + lm + '/' + language + '/' + task + '/'
         output_dir = model_dir + 'output/'
         output_test = output_dir + 'test.seq'
-        evaluate_str = 'python3 "tree2labels/evaluate.py" --input "{}" --gold "{}" --evalb "{}"'
+        evaluate_str = 'python3 "external/tree2labels/evaluate.py" --input "{}" --gold "{}" --evalb "{}"'
                 
         # Get gold test tree file
 
@@ -155,7 +154,7 @@ def evaluate(language, lm, finetuned, pretrained, encoding='const', task='single
                 evaluate_str = evaluate_str.format(
                         output_test,
                         gold_test_tree,
-                        'tree2labels/EVALB/evalb'
+                        'external/tree2labels/EVALB/evalb'
                         )
         else:
                 # Get test label file
@@ -165,7 +164,7 @@ def evaluate(language, lm, finetuned, pretrained, encoding='const', task='single
                 evaluate_str = evaluate_str.format(
                         output_test,
                         gold_test_tree,
-                        'tree2labels/EVAL_SPRML/evalb_spmrl2013.final/evalb_spmrl'
+                        'external/tree2labels/EVAL_SPRML/evalb_spmrl2013.final/evalb_spmrl'
                         )
         
         
@@ -176,14 +175,15 @@ def evaluate(language, lm, finetuned, pretrained, encoding='const', task='single
                 line = line.replace(' ', '').replace('\n', '').split('=')
                 results_dic[line[0]] = line[1]
         
-        if not os.path.exists('const_scores.csv'):
-                with open('const_scores.csv', 'w') as f:
+        const_scores_path = os.path.join('data', 'const_scores.csv')
+        if not os.path.exists(const_scores_path):
+                with open(const_scores_path, 'w') as f:
                         f.write('language,lm,finetuned,pretrained,encoding,task,')
                         for key in results_dic.keys():
                                 f.write(key + ',')
                         f.write('\n')
 
-        with open('const_scores.csv', 'a') as f:
+        with open(const_scores_path, 'a') as f:
                 f.write(language + ',' + lm + ',' + finetuned + ',' + pretrained + ',' + encoding + ',' + task + ',')
                 for key in results_dic.keys():
                         f.write(results_dic[key] + ',')
@@ -200,17 +200,17 @@ def evaluate_spans(
         Evaluate and plot the dependency displacements of a treebank
         """
         # Locate gold file
-        if language == 'english':
+        if treebank == 'english':
                 dataset = 'PTB/'
                 gold = os.path.abspath(dataset + 'test.trees')
 
-        elif language == 'chinese':
+        elif treebank == 'chinese':
                 dataset = 'CTB/'
                 gold = os.path.abspath(dataset + 'test_ch.trees')
         else:
-                dataset = spmrl + language.upper() + '_SPMRL/'
+                dataset = spmrl + treebank.upper() + '_SPMRL/'
                 gold = os.path.abspath(
-                       dataset + 'gold/ptb/test/test.{}.gold.ptb'.format(language.capitalize())
+                       dataset + 'gold/ptb/test/test.{}.gold.ptb'.format(treebank.capitalize())
                 )
         
 
@@ -239,15 +239,17 @@ def evaluate_spans(
                 shutil.copy(test_conllu, temp_dir + lm)
         
         # Define output directory
-        output_dir = 'plots/spans/' +  encoding + '/' + finetuned + '/' + pretrained + '/' + treebank + '_'
-        if not os.path.exists(output_dir):
-                os.makedirs(output_dir)
+        output_dir = os.path.join('plots', 'spans', encoding, finetuned, pretrained, treebank + '_')
+        if not os.path.exists(os.path.dirname(output_dir)):
+                os.makedirs(os.path.dirname(output_dir), exist_ok=True)
+        
         output_dir_nt = output_dir.replace('spans', 'non_terminal')
-        if not os.path.exists(output_dir_nt):
-                os.makedirs(output_dir_nt)
+        if not os.path.exists(os.path.dirname(output_dir_nt)):
+                os.makedirs(os.path.dirname(output_dir_nt), exist_ok=True)
+        
         output = output_dir + 'spans.png'
         # Evaluate displacements
-        disp_script = 'python evaluate_spans.py --gold "{}" --predicted "{}" --output "{}"'.format(gold, temp_dir, output)
+        disp_script = 'python scripts/evaluate_spans.py --gold "{}" --predicted "{}" --output "{}"'.format(gold, temp_dir, output)
         os.system(disp_script)
 
         # Remove temporary directory
