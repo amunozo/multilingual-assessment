@@ -6,7 +6,8 @@ from tempfile import NamedTemporaryFile
 
 
 
-ehd_dir = "/media/alberto/Seagate Portable Drive/ml_probing/"
+# ehd_dir = "/media/alberto/Seagate Portable Drive/ml_probing/"
+ehd_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data'))
 
 
 def load_conllu(filename):
@@ -114,19 +115,19 @@ def create_dataset(
     outputs:
         dataset: a dataset object
     """
-    data_dir = 'data/' + encoding + '/' + finetuned + '/' + pretrained + '/' + treebank + '/' + task + '/'
+    data_dir = os.path.join('data', encoding, finetuned, pretrained, treebank, task)
 
     if encoding == 'const':
         data_files = {
-            "train": data_dir + "{}-train.seq_lu".format(treebank),
-            "validation": data_dir + "{}-dev.seq_lu".format(treebank),
-            "test": data_dir + "{}-test.seq_lu".format(treebank),
+            "train": os.path.join(data_dir, f"{treebank}-train.seq_lu"),
+            "validation": os.path.join(data_dir, f"{treebank}-dev.seq_lu"),
+            "test": os.path.join(data_dir, f"{treebank}-test.seq_lu"),
         }
     else:
         data_files = {
-            "train": data_dir + "train",
-            "validation": data_dir + "dev",
-            "test": data_dir + "test",
+            "train": os.path.join(data_dir, "train"),
+            "validation": os.path.join(data_dir, "dev"),
+            "test": os.path.join(data_dir, "test"),
         }
 
     # Create a json object from the sequence labeling files
@@ -151,7 +152,7 @@ def create_dataset(
     )
 
     # Save the dataset object
-    output_dir = ehd_dir + "datasets" + '/' + encoding + '/' + treebank + '/' + task + '/'
-    dataset.save_to_disk(output_dir) # TODO: think about the name of the dataset
+    output_dir = os.path.join(ehd_dir, "datasets", encoding, treebank, task)
+    dataset.save_to_disk(output_dir)
 
     return dataset

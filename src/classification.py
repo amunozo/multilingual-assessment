@@ -130,8 +130,8 @@ class SLProcessor(DataProcessor):
                 sentence, sentence_postags, sentence_labels = [], [] ,[]
                 tokens = []
 
-        assert(len(sentences_labels), len(sentences_texts))
-        assert(len(sentence_postags), len(sentences_texts))
+        assert len(sentences_labels) == len(sentences_texts)
+        assert len(sentences_postags) == len(sentences_texts)
         for guid, (sent, labels) in enumerate(zip(sentences_texts, sentences_labels)):
  
             examples.append(
