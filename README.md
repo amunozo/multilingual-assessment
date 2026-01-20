@@ -11,11 +11,11 @@ Presented at **IJCNLP-AACL 2023** in Nusa Dua, Bali, Indonesia.
 
 ---
 
-## 🚀 Overview
+## Overview
 
 This project evaluates the performance of various pre-trained language models (like BERT, XLM-R, and CANINE) across different languages and grammatical structures (Constituency and Dependency parsing).
 
-## 📂 Project Structure
+## Project Structure
 
 The repository is organized as follows:
 
@@ -26,7 +26,7 @@ The repository is organized as follows:
 - `results/`: Output logs and evaluation results.
 - `config/`: Model and training configurations.
 
-## 🛠️ Installation
+## Installation
 
 1. **Clone the repository:**
    ```bash
@@ -45,7 +45,7 @@ The repository is organized as follows:
    pip install -r requirements.txt
    ```
 
-## 🏃 Usage
+## Usage
 
 ### Training
 To train the models for dependency parsing:
@@ -65,16 +65,16 @@ To generate plots from the evaluation scores:
 python scripts/plot.py
 ```
 
-## 📊 Results
+## Results
 
 The main findings of the paper show how different subword tokenization strategies and model architectures impact the cross-lingual transferability of grammatical knowledge. For detailed results, please refer to our [paper](https://aclanthology.org/2023.ijcnlp-main.23/).
 
-## 📧 Contact
+## Contact
 
 For any questions or issues, please contact the main author:
 **Alberto Muñoz-Ortiz** - [alberto.munoz.ortiz@udc.es](mailto:alberto.munoz.ortiz@udc.es)
 
-## 🎓 Citation
+## Citation
 
 If you use this code or our findings in your research, please cite:
 
@@ -94,7 +94,7 @@ If you use this code or our findings in your research, please cite:
 }
 ```
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 We gratefully acknowledge the support of the following organizations:
 - **European Research Council (ERC)** (SALSA, grant No 101100615)
