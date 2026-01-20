@@ -69,11 +69,6 @@ python scripts/plot.py
 
 The main findings of the paper show how different subword tokenization strategies and model architectures impact the cross-lingual transferability of grammatical knowledge. For detailed results, please refer to our [paper](https://aclanthology.org/2023.ijcnlp-main.23/).
 
-## Contact
-
-For any questions or issues, please contact the main author:
-**Alberto Muñoz-Ortiz** - [alberto.munoz.ortiz@udc.es](mailto:alberto.munoz.ortiz@udc.es)
-
 ## Citation
 
 If you use this code or our findings in your research, please cite:
@@ -93,6 +88,11 @@ If you use this code or our findings in your research, please cite:
     pages = "343--358",
 }
 ```
+
+## Contact
+
+For any questions or issues, please contact the main author:
+**Alberto Muñoz-Ortiz** - [alberto.munoz.ortiz@udc.es](mailto:alberto.munoz.ortiz@udc.es)
 
 ## Acknowledgments
 
