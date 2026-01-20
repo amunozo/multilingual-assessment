@@ -96,8 +96,4 @@ If you use this code or our findings in your research, please cite:
 
 ## Acknowledgments
 
-We gratefully acknowledge the support of the following organizations:
-- **European Research Council (ERC)** (SALSA, grant No 101100615)
-- **ERDF/MICINN-AEI** (Grant SCANNER-UDC)
-- **Xunta de Galicia** (Grant ED431C 2020/11 and CITIC)
-- **MCIN/AEI** (FPI 2021 grant)
+We acknowledge the European Research Council (ERC), which has funded this research under the Horizon Europe research and innovation programme (SALSA, grant agreement No 101100615), ERDF/MICINN-AEI (SCANNER-UDC, PID2020-113230RB-C21), Xunta de Galicia (ED431C 2020/11), grant FPI 2021 (PID2020-113230RB-C21) funded by MCIN/AEI/10.13039/501100011033, and Centro de Investigación de Galicia ‘‘CITIC’’, funded by the Xunta de Galicia through the collaboration agreement between the Consellería de Cultura, Educación, Formación Profesional e Universidades and the Galician universities for the reinforcement of the research centres of the Galician University System (CIGUS).
