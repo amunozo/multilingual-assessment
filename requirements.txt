@@ -1,11 +1,16 @@
-torch
-transformers
-datasets
-conllu
-nltk
-scikit-learn
-pandas
-matplotlib
-seaborn
-numpy
-chardet
+# Model training and evaluation
+torch>=2.1
+transformers>=4.38
+accelerate>=0.27
+datasets>=2.16
+evaluate>=0.4
+seqeval>=1.2
+
+# Corpus parsing and analysis
+conllu>=4.5
+nltk>=3.8
+numpy>=1.24
+scikit-learn>=1.3
+pandas>=2.0
+matplotlib>=3.7
+seaborn>=0.13

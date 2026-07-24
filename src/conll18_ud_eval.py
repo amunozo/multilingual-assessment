@@ -123,12 +123,12 @@ UNIVERSAL_FEATURES = {
 class UDError(Exception):
     pass
 
-# Conversion methods handling `str` <-> `unicode` conversions in Python2
+# Conversion methods retained for compatibility with byte streams.
 def _decode(text):
-    return text if sys.version_info[0] >= 3 or not isinstance(text, str) else text.decode("utf-8")
+    return text.decode("utf-8") if isinstance(text, bytes) else text
 
 def _encode(text):
-    return text if sys.version_info[0] >= 3 or not isinstance(text, unicode) else text.encode("utf-8")
+    return text.decode("utf-8") if isinstance(text, bytes) else text
 
 # Load given CoNLL-U file into internal representation
 def load_conllu(file):
@@ -247,7 +247,7 @@ def load_conllu(file):
         if "-" in columns[ID]:
             try:
                 start, end = map(int, columns[ID].split("-"))
-            except:
+            except ValueError:
                 raise UDError("Cannot parse multi-word token ID '{}'".format(_encode(columns[ID])))
 
             for _ in range(start, end + 1):
@@ -260,7 +260,7 @@ def load_conllu(file):
         else:
             try:
                 word_id = int(columns[ID])
-            except:
+            except ValueError:
                 raise UDError("Cannot parse word ID '{}'".format(_encode(columns[ID])))
             if word_id != len(ud.words) - sentence_start + 1:
                 raise UDError("Incorrect word ID '{}' for word '{}', expected '{}'".format(
@@ -268,7 +268,7 @@ def load_conllu(file):
 
             try:
                 head_id = int(columns[HEAD])
-            except:
+            except ValueError:
                 raise UDError("Cannot parse HEAD '{}'".format(_encode(columns[HEAD])))
             if head_id < 0:
                 raise UDError("HEAD cannot be negative")
@@ -474,8 +474,8 @@ def evaluate(gold_ud, system_ud):
 
 
 def load_conllu_file(path):
-    _file = open(path, mode="r", **({"encoding": "utf-8"} if sys.version_info >= (3, 0) else {}))
-    return load_conllu(_file)
+    with open(path, mode="r", encoding="utf-8") as conllu_file:
+        return load_conllu(conllu_file)
 
 def evaluate_wrapper(args):
     # Load CoNLL-U files

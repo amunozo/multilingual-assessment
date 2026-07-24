@@ -1,158 +1,188 @@
-from datasets import Sequence, Value, ClassLabel, Features, load_dataset, Features
-import os
-import conllu
+"""Utilities for converting sequence-label files to Hugging Face datasets."""
+
+from __future__ import annotations
+
 import json
-from tempfile import NamedTemporaryFile
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Iterable
+
+from .paths import (
+    DEFAULT_ARTIFACT_ROOT,
+    DEFAULT_ENCODED_ROOT,
+    dataset_dir,
+    encoded_experiment_dir,
+)
 
 
-
-# ehd_dir = "/media/alberto/Seagate Portable Drive/ml_probing/"
-ehd_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data'))
+SPLITS = ("train", "validation", "test")
 
 
-def load_conllu(filename):
-    with open(filename) as f:
-        data = conllu.parse(f.read())
-    return data
+def load_conllu(filename: Path | str):
+    """Load a CoNLL-U file, importing the optional parser only when needed."""
+    try:
+        import conllu
+    except ImportError as exc:  # pragma: no cover - depends on optional stack
+        raise RuntimeError("Install the research dependencies with `pip install -r requirements.txt`.") from exc
 
-def create_json_files(data_files):
-    """Convert the TSV data files in a JSON file to create a dataset"""
-    train_json = NamedTemporaryFile("w", delete=False)
-    eval_json = NamedTemporaryFile("w", delete=False)
-    test_json = NamedTemporaryFile("w", delete=False) 
+    with Path(filename).open(encoding="utf-8") as handle:
+        return conllu.parse(handle.read())
 
-    train_list = []
-    eval_list = []
-    test_list = []
-    
+
+def _sentences(path: Path | str) -> Iterable[list[tuple[str, str, str]]]:
+    """Yield validated token/POS/label triples from a sequence-label file."""
+    sentence: list[tuple[str, str, str]] = []
+    with Path(path).open(encoding="utf-8") as handle:
+        for line_number, raw_line in enumerate(handle, start=1):
+            line = raw_line.rstrip("\n")
+            if not line:
+                if sentence:
+                    yield sentence
+                    sentence = []
+                continue
+            fields = line.split("\t")
+            if len(fields) != 3:
+                raise ValueError(
+                    f"Expected three tab-separated fields in {path}:{line_number}; "
+                    f"found {len(fields)}."
+                )
+            sentence.append((fields[0], fields[1], fields[2]))
+    if sentence:
+        yield sentence
+
+
+def return_class_names(data_files: dict[str, Path | str]) -> dict[str, list[str]]:
+    """Return deterministic POS and syntax-label vocabularies.
+
+    Syntax labels are learned from train and validation only. Test-only labels
+    are mapped to ``UNK`` when records are created.
+    """
+    missing = set(SPLITS) - set(data_files)
+    if missing:
+        raise ValueError(f"Missing dataset splits: {', '.join(sorted(missing))}")
+
+    pos_tags: set[str] = set()
+    syntax_labels: set[str] = set()
+    for split in SPLITS:
+        for sentence in _sentences(data_files[split]):
+            for _, pos_tag, syntax_label in sentence:
+                pos_tags.add(pos_tag)
+                if split != "test":
+                    syntax_labels.add(syntax_label)
+
+    labels = sorted(syntax_labels - {"UNK"})
+    labels.append("UNK")
+    return {"pos_tags": sorted(pos_tags), "syntax_labels": labels}
+
+
+def sequence_records(
+    path: Path | str,
+    *,
+    split: str,
+    known_labels: set[str],
+) -> list[dict[str, object]]:
+    """Convert one sequence-label split to JSON-compatible records."""
+    records: list[dict[str, object]] = []
+    for index, sentence in enumerate(_sentences(path), start=1):
+        tokens, pos_tags, labels = zip(*sentence)
+        if split == "test":
+            labels = tuple(label if label in known_labels else "UNK" for label in labels)
+        records.append(
+            {
+                "id": index,
+                "tokens": list(tokens),
+                "pos_tags": list(pos_tags),
+                "syntax_labels": list(labels),
+            }
+        )
+    return records
+
+
+def create_json_files(
+    data_files: dict[str, Path | str], output_dir: Path | str
+) -> dict[str, str]:
+    """Write the three sequence-label splits as JSON files."""
     class_names = return_class_names(data_files)
+    known_labels = set(class_names["syntax_labels"])
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
 
-    for split in data_files:
-        idx = 0
-        file = data_files[split]
-        with open(file, 'r') as f:
-            sentences = f.read().split('\n\n')
-            for sentence in sentences:
-                idx += 1
-                sentence_tokens = []
-                sentence_pos_tags = []
-                sentence_syntax_labels = []
-
-                lines = sentence.split('\n')
-                if len(lines) > 1:
-                    for line in lines:
-                        if line:
-                            token, pos_tag, syntax_label = line.split('\t')
-                            sentence_tokens.append(token)
-                            sentence_pos_tags.append(pos_tag)
-                            if split != "test":
-                                sentence_syntax_labels.append(syntax_label)
-                            else:
-                                if syntax_label in class_names["syntax_labels"]:
-                                    sentence_syntax_labels.append(syntax_label)
-                                else:
-                                    sentence_syntax_labels.append("UNK")
+    json_files: dict[str, str] = {}
+    for split in SPLITS:
+        destination = output / f"{split}.json"
+        records = sequence_records(
+            data_files[split], split=split, known_labels=known_labels
+        )
+        destination.write_text(
+            json.dumps({"data": records}, ensure_ascii=False), encoding="utf-8"
+        )
+        json_files[split] = str(destination)
+    return json_files
 
 
-                if sentence_tokens != []:
-                    if split == "train":
-                        train_list.append({"id": idx, "tokens": sentence_tokens, "pos_tags": sentence_pos_tags, "syntax_labels": sentence_syntax_labels})
-                    elif split == "validation":
-                        eval_list.append({"id": idx, "tokens": sentence_tokens, "pos_tags": sentence_pos_tags, "syntax_labels": sentence_syntax_labels})
-                    else:
-                        test_list.append({"id": idx, "tokens": sentence_tokens, "pos_tags": sentence_pos_tags, "syntax_labels": sentence_syntax_labels})
-
-    
-    train_dic = {"data": train_list}
-    eval_dic = {"data": eval_list}
-    test_dic = {"data": test_list}
-
-    with open(train_json.name, 'w', encoding='utf8') as f:
-        json.dump(train_dic, f, ensure_ascii=False)
-
-    with open(eval_json.name, 'w', encoding='utf8') as f:
-        json.dump(eval_dic, f, ensure_ascii=False)
-    
-    with open(test_json.name, 'w', encoding='utf8') as f:
-        json.dump(test_dic, f, ensure_ascii=False)
-
-    return {"train":train_json.name, "validation":eval_json.name, "test":test_json.name}
-
-def return_class_names(data_files):
-    train_file = data_files["train"]
-    eval_file = data_files["validation"]
-    test_file = data_files["test"]
-
-    class_names = {"pos_tags": set(), "syntax_labels": set()}
-
-    for file in [train_file, eval_file, test_file]:
-        with open(file, 'r') as f:
-            sentences = f.read().split('\n\n')
-            for sentence in sentences:
-                lines = sentence.split('\n')
-                for line in lines:
-                    if line:
-                        token, pos_tag, syntax_label = line.split('\t')
-                        class_names["pos_tags"].add(pos_tag)
-                        if file != test_file:
-                            class_names["syntax_labels"].add(syntax_label)
-
-    class_names["pos_tags"] = list(class_names["pos_tags"])
-    class_names["syntax_labels"] = list(class_names["syntax_labels"])
-
-    # add UNK label
-    class_names["syntax_labels"].append("UNK")
-
-    return class_names
-
-def create_dataset(
-        treebank, finetuned, pretrained, encoding, task='single'
-    ):
-    """
-    Create and save an untokenized dataset object from sequence labeling files
-    inputs:
-        data_dir: directory containing the sequence labeling files
-    outputs:
-        dataset: a dataset object
-    """
-    data_dir = os.path.join('data', encoding, finetuned, pretrained, treebank, task)
-
-    if encoding == 'const':
-        data_files = {
-            "train": os.path.join(data_dir, f"{treebank}-train.seq_lu"),
-            "validation": os.path.join(data_dir, f"{treebank}-dev.seq_lu"),
-            "test": os.path.join(data_dir, f"{treebank}-test.seq_lu"),
+def sequence_data_files(data_dir: Path | str, encoding: str, treebank: str) -> dict[str, Path]:
+    root = Path(data_dir)
+    if encoding == "const":
+        names = {
+            "train": f"{treebank}-train.seq_lu",
+            "validation": f"{treebank}-dev.seq_lu",
+            "test": f"{treebank}-test.seq_lu",
         }
     else:
-        data_files = {
-            "train": os.path.join(data_dir, "train"),
-            "validation": os.path.join(data_dir, "dev"),
-            "test": os.path.join(data_dir, "test"),
-        }
+        names = {"train": "train", "validation": "dev", "test": "test"}
+    files = {split: root / name for split, name in names.items()}
+    absent = [str(path) for path in files.values() if not path.is_file()]
+    if absent:
+        raise FileNotFoundError("Missing encoded split(s): " + ", ".join(absent))
+    return files
 
-    # Create a json object from the sequence labeling files
-    data_json = create_json_files(data_files)
 
-    # Obtain the class names from the sequence labeling files
+def create_dataset(
+    treebank: str,
+    finetuned: str,
+    pretrained: str,
+    encoding: str,
+    task: str = "single",
+    *,
+    encoded_root: Path | str = DEFAULT_ENCODED_ROOT,
+    artifact_root: Path | str = DEFAULT_ARTIFACT_ROOT,
+):
+    """Create and persist an untokenized Hugging Face dataset."""
+    try:
+        from datasets import ClassLabel, Features, Sequence, Value, load_dataset
+    except ImportError as exc:  # pragma: no cover - depends on optional stack
+        raise RuntimeError("Install the research dependencies with `pip install -r requirements.txt`.") from exc
+
+    data_dir = encoded_experiment_dir(
+        encoding,
+        finetuned,
+        pretrained,
+        treebank,
+        task,
+        root=encoded_root,
+    )
+    data_files = sequence_data_files(data_dir, encoding, treebank)
     class_names = return_class_names(data_files)
 
-    # Create a dataset object from the json object
-    dataset = load_dataset(
-        "json", 
-        data_files=data_json, 
-        field="data",
-        features=Features(
-            {
-                "id": Value("int32"),
-                "tokens": Sequence(Value("string")),
-                "pos_tags": Sequence(ClassLabel(names=class_names["pos_tags"], num_classes=len(class_names["pos_tags"]))),
-                "syntax_labels": Sequence(ClassLabel(names=class_names["syntax_labels"], num_classes=len(class_names["syntax_labels"]))),
-            }
-        ),
-    )
+    with TemporaryDirectory(prefix="multilingual-assessment-json-") as temp_dir:
+        json_files = create_json_files(data_files, temp_dir)
+        dataset = load_dataset(
+            "json",
+            data_files=json_files,
+            field="data",
+            features=Features(
+                {
+                    "id": Value("int32"),
+                    "tokens": Sequence(Value("string")),
+                    "pos_tags": Sequence(ClassLabel(names=class_names["pos_tags"])),
+                    "syntax_labels": Sequence(
+                        ClassLabel(names=class_names["syntax_labels"])
+                    ),
+                }
+            ),
+        )
 
-    # Save the dataset object
-    output_dir = os.path.join(ehd_dir, "datasets", encoding, treebank, task)
-    dataset.save_to_disk(output_dir)
-
+    output = dataset_dir(encoding, treebank, task, root=artifact_root)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    dataset.save_to_disk(output)
     return dataset
