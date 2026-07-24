@@ -1,0 +1,6 @@
+[submodule "external/tree2labels"]
+	path = external/tree2labels
+	url = https://github.com/aghie/tree2labels.git
+[submodule "external/dep2label"]
+	path = external/dep2label
+	url = https://github.com/mstrise/dep2label.git
