@@ -21,8 +21,7 @@ downloads, and substantial compute. Those corpora and trained checkpoints are
 not redistributed here.
 
 The control flow, data conversion, metrics, and command-line interfaces are
-covered by lightweight tests. The complete experiment matrix has not been
-rerun after the portability cleanup.
+covered by lightweight tests.
 
 ## Setup
 
@@ -42,11 +41,10 @@ For an existing clone, restore the pinned dependencies with:
 git submodule update --init --recursive
 ```
 
-`external/tree2labels` is the exact historical Python 2 source. The three
-encoding modules used by this project have a mechanically converted and
-attributed Python 3 compatibility copy in `vendor/tree2labels_py3/`.
-`external/dep2label` is called through its Python API, which also avoids a typo
-in its historical command-line encoding choices.
+`external/tree2labels` contains the original Python 2 implementation. The three
+encoding modules used by this project are also available as an attributed
+Python 3 compatibility copy in `vendor/tree2labels_py3/`.
+`external/dep2label` is called through its Python API.
 
 ## Data layout
 
