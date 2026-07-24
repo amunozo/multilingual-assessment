@@ -162,3 +162,6 @@ cython_debug/
 !requirements.txt
 # data/
 # results/
+artifacts/
+temp/
+plots/
